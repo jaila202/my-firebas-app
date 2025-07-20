@@ -39,7 +39,6 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
 .success-message { display: none; padding: 0.75rem; margin-top: 1rem; border-radius: 8px; background-color: #e8f5e9; color: var(--success-color); font-weight: 500; display: flex; align-items: center; gap: 0.5rem; }
 .success-message i { color: var(--success-color); }
 </style>
-<script src="//cdn.jsdelivr.net/npm/eruda"></script><script>eruda.init();</script>
 </head>
 <body>
 <div id="nav-menu">
@@ -203,7 +202,7 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
                 const docSnap = await getDoc(doc(db, "attendance", docId));
                 return docSnap.exists();
             } catch (error) {
-                console.error(`Permission error checking attendance for ${session}, or other error:`, error);
+                console.error(`Error checking attendance for ${session}:`, error);
                 return false;
             }
         }
@@ -289,7 +288,8 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         const tasksQuery = query(collection(db, "tasks"), where("status", "==", "active"), orderBy("createdAt", "desc"));
         const submissionsQuery = query(collection(db, "task_submissions"), where("workerId", "==", loggedInUser.uid), where("date", "==", dateString));
         try {
-            const [tasksSnapshot, submissionsSnapshot] = await Promise.all([ getDocs(tasksQuery), getDocs(submissionsSnapshot) ]);
+            // ✅ FINAL FIX: Corrected typo from 'submissionsSnapshot' to 'submissionsQuery'
+            const [tasksSnapshot, submissionsSnapshot] = await Promise.all([ getDocs(tasksQuery), getDocs(submissionsQuery) ]);
             const submittedTaskIds = new Set(submissionsSnapshot.docs.map(doc => doc.data().taskId));
             
             let hasUnsubmittedTasks = false;
