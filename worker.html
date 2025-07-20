@@ -200,61 +200,71 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
     }
 
     // --- ATTENDANCE ---
+    // ✅ FIX: This entire function has been rewritten for accuracy and clarity.
     async function updateAttendanceUI() {
-        const { date, hour } = getISTDateTime();
-        document.getElementById('attendance-date').textContent = date.toLocaleDateString('en-GB');
+        const { date, dateString, hour } = getISTDateTime();
+        document.getElementById('attendance-date').textContent = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
-        async function checkSession(sessionName, relevantDate) {
-            const btn = document.getElementById(`${sessionName}Btn`);
-            const statusSpan = document.getElementById(`${sessionName}Status`);
-            const docSnap = await getDoc(doc(db, "attendance", `${loggedInUser.uid}_${relevantDate}_${sessionName}`));
-            
-            if (docSnap.exists()) {
-                btn.disabled = true;
-                btn.textContent = "Marked";
-                statusSpan.textContent = "You're Present";
-                statusSpan.className = "status present";
-                return true;
-            }
-            return false;
+        async function isSessionMarked(session, relevantDate) {
+            const docId = `${loggedInUser.uid}_${relevantDate}_${session}`;
+            const docSnap = await getDoc(doc(db, "attendance", docId));
+            return docSnap.exists();
         }
 
-        const todayString = date.toISOString().slice(0, 10);
-        const morningMarked = await checkSession('morning', todayString);
-        if (!morningMarked) {
-            const morningBtn = document.getElementById('morningBtn');
-            const morningStatus = document.getElementById('morningStatus');
-            if (hour >= 6 && hour < 11) {
+        // --- Morning Session (6 AM - 11 AM) ---
+        const morningBtn = document.getElementById('morningBtn');
+        const morningStatus = document.getElementById('morningStatus');
+        const morningMarked = await isSessionMarked('morning', dateString);
+
+        if (morningMarked) {
+            morningBtn.disabled = true;
+            morningBtn.textContent = "Marked";
+            morningStatus.className = "status present";
+            morningStatus.textContent = "You're Present";
+        } else {
+            const isWindowActive = hour >= 6 && hour < 11;
+            if (isWindowActive) {
                 morningBtn.disabled = false;
                 morningBtn.textContent = "Mark";
                 morningStatus.textContent = "";
             } else {
                 morningBtn.disabled = true;
-                morningStatus.textContent = hour >= 11 ? "Time Over" : "Not Yet Started";
-                morningStatus.className = hour >= 11 ? "status absent" : "status pending";
+                const isWindowOver = hour >= 11;
+                morningStatus.textContent = isWindowOver ? "Time Over" : "Not Yet Started";
+                morningStatus.className = isWindowOver ? "status absent" : "status pending";
             }
         }
 
-        let eveningRelevantDate = todayString;
-        if (hour < 15) { 
-            let yesterday = new Date(date);
+        // --- Evening Session (3 PM - 1 AM) ---
+        const eveningBtn = document.getElementById('eveningBtn');
+        const eveningStatus = document.getElementById('eveningStatus');
+
+        let relevantEveningDate = dateString;
+        // The last evening session is relevant until 3 PM the next day.
+        if (hour < 15) {
+            const yesterday = new Date(date);
             yesterday.setDate(yesterday.getDate() - 1);
-            eveningRelevantDate = yesterday.toISOString().slice(0, 10);
+            relevantEveningDate = yesterday.toISOString().slice(0, 10);
         }
-        const eveningMarked = await checkSession('evening', eveningRelevantDate);
-        if (!eveningMarked) {
-            const eveningBtn = document.getElementById('eveningBtn');
-            const eveningStatus = document.getElementById('eveningStatus');
-            const isEveningWindowActive = (hour >= 15 || hour < 1);
-            if (isEveningWindowActive) {
+        
+        const eveningMarked = await isSessionMarked('evening', relevantEveningDate);
+
+        if (eveningMarked) {
+            eveningBtn.disabled = true;
+            eveningBtn.textContent = "Marked";
+            eveningStatus.className = "status present";
+            eveningStatus.textContent = "You're Present";
+        } else {
+            const isWindowActive = hour >= 15 || hour < 1;
+            if (isWindowActive) {
                 eveningBtn.disabled = false;
                 eveningBtn.textContent = "Mark";
                 eveningStatus.textContent = "";
             } else {
                 eveningBtn.disabled = true;
-                // ✅ FIX: Correctly show 'Time Over' or 'Not Yet Started'
-                eveningStatus.textContent = (hour >= 1 && hour < 15) ? "Time Over" : "Not Yet Started";
-                eveningStatus.className = (hour >= 1 && hour < 15) ? "status absent" : "status pending";
+                const isWindowOver = hour >= 1 && hour < 15;
+                eveningStatus.textContent = isWindowOver ? "Time Over" : "Not Yet Started";
+                eveningStatus.className = isWindowOver ? "status absent" : "status pending";
             }
         }
     }
@@ -282,7 +292,7 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         }
     }
     
-    // --- TASKS & REPORTS ---
+     // --- TASKS & REPORTS ---
     async function renderNewTasks() {
         if (!loggedInUser) return;
         document.getElementById('loader-tasks').style.display = 'block';
@@ -292,7 +302,6 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         const submissionsQuery = query(collection(db, "task_submissions"), where("workerId", "==", loggedInUser.uid), where("date", "==", dateString));
 
         try {
-            // ✅ FIX: Corrected the typo from submissionsSnapshot to submissionsQuery
             const [tasksSnapshot, submissionsSnapshot] = await Promise.all([ getDocs(tasksQuery), getDocs(submissionsQuery) ]);
             const submittedTaskIds = new Set(submissionsSnapshot.docs.map(doc => doc.data().taskId));
             const container = document.getElementById('newTasksContainer');
@@ -348,7 +357,7 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         }
     }
 
-      // --- INITIALIZATION ---
+    // --- INITIALIZATION ---
     function initializeDashboard() {
         document.getElementById('welcomeMsg').textContent = `Welcome, ${loggedInUser.name}!`;
         document.getElementById('morningBtn').addEventListener('click', () => markAttendance('morning'));
@@ -395,3 +404,4 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
 </script>
 </body>
 </html>
+    
