@@ -292,10 +292,14 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         }
     }
     
-     // --- TASKS & REPORTS ---
+    // --- TASKS & REPORTS ---
     async function renderNewTasks() {
         if (!loggedInUser) return;
-        document.getElementById('loader-tasks').style.display = 'block';
+        const loader = document.getElementById('loader-tasks');
+        loader.style.display = 'block';
+        const container = document.getElementById('newTasksContainer');
+        container.innerHTML = '';
+
         const { dateString } = getISTDateTime();
         
         const tasksQuery = query(collection(db, "tasks"), where("status", "==", "active"), orderBy("createdAt", "desc"));
@@ -304,15 +308,10 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         try {
             const [tasksSnapshot, submissionsSnapshot] = await Promise.all([ getDocs(tasksQuery), getDocs(submissionsQuery) ]);
             const submittedTaskIds = new Set(submissionsSnapshot.docs.map(doc => doc.data().taskId));
-            const container = document.getElementById('newTasksContainer');
-            container.innerHTML = '';
             
-            if (tasksSnapshot.empty) {
-                container.innerHTML = '<p class="empty-state">No new tasks available.</p>';
-                return;
-            }
-
+            let tasksAvailable = false;
             tasksSnapshot.forEach(d => {
+                tasksAvailable = true;
                 const task = d.data();
                 const isSubmitted = submittedTaskIds.has(d.id);
                 container.innerHTML += `
@@ -324,11 +323,16 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
                         </button>
                     </div>`;
             });
+               // ✅ FIX: Show "No new tasks" if the container is still empty after checking.
+            if (!tasksAvailable || container.innerHTML.trim() === '') {
+                 container.innerHTML = '<p class="empty-state">No new tasks available.</p>';
+            }
+
         } catch (error) {
             console.error("Failed to render tasks:", error);
-            document.getElementById('newTasksContainer').innerHTML = '<p class="empty-state" style="color: var(--danger-color);">Could not load tasks. Please try again later.</p>';
+            container.innerHTML = '<p class="empty-state" style="color: var(--danger-color);">Could not load tasks. Please ensure you have the required database index (see previous instructions).</p>';
         } finally {
-            document.getElementById('loader-tasks').style.display = 'none';
+            loader.style.display = 'none';
         }
     }
     
@@ -404,4 +408,3 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
 </script>
 </body>
 </html>
-    
