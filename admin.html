@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - CipherCoin Team</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+    <style>
+        :root { --primary-color: #0d6efd; --dark-color: #212529; --light-color: #f8f9fa; --white-color: #fff; --danger-color: #dc3545; --success-color: #198754; }
+        body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background-color: var(--light-color); }
+        .header { background-color: var(--dark-color); color: var(--white-color); padding: 1rem; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1020; }
+        h1, h2 { margin: 0; font-size: 1.2rem; }
+        h2 { margin-bottom: 1rem; border-bottom: 1px solid #eee; padding-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
+        .header-title-group { display: flex; flex-direction: column; align-items: flex-start; }
+        .header-title-group h1 { font-size: 1.2rem; }
+        .header-title-group span { font-size: 0.8rem; opacity: 0.8; }
+        .icon-btn { background: none; border: none; color: var(--white-color); font-size: 1.5rem; cursor: pointer; }
+        .container { padding: 1rem; }
+        .card { background: var(--white-color); border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 1.5rem; padding: 1.5rem; }
+        .form-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1rem; }
+        input, textarea, select { font-size: 1rem; padding: 0.75rem; border-radius: 8px; border: 1px solid #ccc; width: 100%; box-sizing: border-box; }
+        .btn { padding: 0.5rem 1rem; border-radius: 8px; border: none; color: var(--white-color); cursor: pointer; font-weight: 500; }
+        .btn-primary { background-color: var(--primary-color); }
+        .btn-danger { background-color: var(--danger-color); }
+        .btn-success { background-color: var(--success-color); }
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #ddd; vertical-align: middle; }
+        .empty-state { text-align: center; padding: 1.5rem; color: #6c757d; font-weight: 500; }
+        #nav-menu { position: fixed; top: 0; left: -280px; width: 280px; height: 100%; background-color: var(--dark-color); z-index: 1030; transition: left 0.3s ease; padding-top: 4rem; }
+        #nav-menu a { display: block; padding: 1rem 1.5rem; color: var(--white-color); text-decoration: none; font-size: 1.1rem; border-bottom: 1px solid #444; }
+        #overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1010; }
+        .modal { display: none; position: fixed; z-index: 1040; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+        .modal-content { background: var(--white-color); padding: 2rem; border-radius: 12px; width: 90%; max-width: 400px; }
+        .close-btn { float: right; font-size: 1.5rem; cursor: pointer; }
+        .details-list { list-style-type: none; padding: 0; margin: 0; font-size: 0.9em; white-space: nowrap; }
+        .details-list li { margin-bottom: 0.25rem; }
+    </style>
+</head>
+<body>
+    <div id="nav-menu">
+        <a href="history.html?type=attendance"><i class="fas fa-calendar-check fa-fw"></i> Attendance History</a>
+        <a href="history.html?type=reports"><i class="fas fa-tasks fa-fw"></i> Task History</a>
+        <a href="history.html?type=withdrawals"><i class="fas fa-history fa-fw"></i> Withdrawal History</a>
+        <a href="#" id="logoutBtnNav"><i class="fas fa-sign-out-alt fa-fw"></i> Logout</a>
+    </div>
+    <div id="overlay"></div>
+    <div class="header">
+        <div class="header-title-group"><h1>Admin Dashboard</h1><span>CipherCoin Team</span></div>
+        <button id="menu-btn" class="icon-btn"><i class="fas fa-bars"></i></button>
+    </div>
+    <div class="container">
+        <div class="card">
+            <h2><i class="fas fa-users-cog"></i> Manage Workers</h2>
+            <div class="form-grid">
+                <input type="text" id="workerName" placeholder="Worker Name"><input type="email" id="workerEmail" placeholder="Worker Email">
+                <input type="password" id="workerPassword" placeholder="Temporary Password"><input type="text" id="workerPosition" placeholder="Position">
+            </div>
+            <button class="btn btn-primary" id="addWorkerBtn" style="margin-top: 1rem;">Add Worker</button>
+            <div class="table-container"><table id="workerTable"><thead><tr><th>Name</th><th>Position</th><th>Credits</th><th>Actions</th></tr></thead><tbody id="workerTableBody"></tbody></table></div>
+        </div>
+        <div class="card">
+            <h2><i class="fas fa-bullhorn"></i> Manage Tasks</h2>
+            <div class="form-grid"><input type="text" id="taskTitle" placeholder="Task Title"><input type="number" id="taskCredits" placeholder="Credit Value"></div>
+            <textarea id="taskDescription" rows="3" placeholder="Task Description..." style="margin-bottom: 1rem;"></textarea>
+            <button class="btn btn-primary" id="addTaskBtn">Add New Task</button>
+            <div class="table-container" style="margin-top: 1.5rem;"><table id="tasksTable"><thead><tr><th>Title</th><th>Credits</th><th>Actions</th></tr></thead><tbody id="tasksTableBody"></tbody></table></div>
+        </div>
+        <div class="card">
+            <h2><i class="fas fa-user-check"></i> Task Submissions for Approval</h2>
+            <div class="table-container"><table id="taskSubmissionsTable"><thead><tr><th>Worker</th><th>Task</th><th>Credits</th><th>Actions</th></tr></thead><tbody id="taskSubmissionsTableBody"></tbody></table></div>
+        </div>
+        <div class="card">
+            <h2><i class="fas fa-hand-holding-usd"></i> Withdrawal Requests</h2>
+            <div class="table-container"><table id="withdrawalTable"><thead><tr><th>Worker</th><th>Amount</th><th>Date</th><th>Actions</th></tr></thead><tbody id="withdrawalTableBody"></tbody></table></div>
+        </div>
+        <div class="card">
+            <h2><i class="fas fa-check-circle"></i> Daily Reports Approval</h2>
+            <input type="date" id="reportDateFilter">
+            <div class="table-container"><table id="reportsTable"><thead><tr><th>Worker</th><th>Details</th><th>Status</th><th>Actions</th></tr></thead><tbody id="reportsTableBody"></tbody></table></div>
+        </div>
+    </div>
+    <div id="approval-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2>Approve Report</h2><p>Enter credits to award:</p>
+            <input type="number" id="credits-input" placeholder="e.g., 10">
+            <button id="confirm-approval-btn" class="btn btn-primary" style="width:100%; margin-top: 1rem;">Confirm Approval</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getFirestore, collection, doc, setDoc, deleteDoc, query, where, onSnapshot, serverTimestamp, addDoc, updateDoc, increment, writeBatch } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+        import { getAuth, signOut } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+        const firebaseConfig = { apiKey: "AIzaSyAQk4RNMXrJgQXW0OMWbNINhl1HCdYRqZc", authDomain: "cipher-coin-team.firebaseapp.com", projectId: "cipher-coin-team", storageBucket: "cipher-coin-team.firebasestorage.app", messagingSenderId: "1061225842169", appId: "1:1061225842169:web:e36f7e8e9a07eba6fb2928" };
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        if (!JSON.parse(sessionStorage.getItem('loggedInUser'))?.role === 'admin') { window.location.href = 'index.html'; }
+        
+        const menuBtn = document.getElementById('menu-btn'), navMenu = document.getElementById('nav-menu'), overlay = document.getElementById('overlay');
+        menuBtn.addEventListener('click', () => { navMenu.style.left = '0'; overlay.style.display = 'block'; });
+        overlay.addEventListener('click', () => { navMenu.style.left = '-280px'; overlay.style.display = 'none'; });
+        const logout = () => { signOut(auth).then(() => { sessionStorage.clear(); window.location.href = 'index.html'; }); };
+        document.getElementById('logoutBtnNav').addEventListener('click', logout);
+        
+        const approvalModal = document.getElementById('approval-modal'), closeModalBtn = document.querySelector('.close-btn'), confirmApprovalBtn = document.getElementById('confirm-approval-btn');
+        closeModalBtn.onclick = () => approvalModal.style.display = 'none';
+        
+        function setupListener(collectionName, queryConstraints, tableBodyId, renderFunction, sortFunction) {
+            const q = query(collection(db, collectionName), ...queryConstraints);
+            onSnapshot(q, (snapshot) => {
+                const tableBody = document.getElementById(tableBodyId);
+                tableBody.innerHTML = '';
+                if (snapshot.empty) {
+                    const colCount = tableBody.parentElement.querySelector('thead tr').childElementCount;
+                    tableBody.innerHTML = `<tr><td colspan="${colCount}" class="empty-state">No records yet.</td></tr>`;
+                } else {
+                    let docs = snapshot.docs;
+                    if (sortFunction) { docs.sort(sortFunction); }
+                    docs.forEach(doc => renderFunction(tableBody, doc));
+                }
+            }, error => console.error(`Listener for ${collectionName} failed:`, error));
+        }
+        
+        const renderWorkerRow = (tbody, doc) => { const w = doc.data(); tbody.innerHTML += `<tr><td>${w.name}</td><td>${w.position}</td><td>${w.credits || 0}</td><td><button class="btn btn-danger" data-action="delete-worker" data-id="${doc.id}">Delete</button></td></tr>`; };
+        const renderTaskRow = (tbody, doc) => { const t = doc.data(); tbody.innerHTML += `<tr><td>${t.title}</td><td>${t.credits}</td><td><button class="btn btn-danger" data-action="delete-task" data-id="${doc.id}">Delete</button></td></tr>`; };
+        const renderSubmissionRow = (tbody, doc) => { const s = doc.data(); tbody.innerHTML += `<tr><td>${s.workerName}</td><td>${s.taskTitle}</td><td>${s.credits}</td><td><button class="btn btn-success" data-action="approve-task" data-id="${doc.id}" data-worker-id="${s.workerId}" data-credits="${s.credits}">Approve</button></td></tr>`; };
+        const renderWithdrawalRow = (tbody, doc) => { const w = doc.data(); tbody.innerHTML += `<tr><td>${w.workerName}</td><td>${w.amount}</td><td>${w.requestedAt.toDate().toLocaleDateString()}</td><td><button class="btn btn-success" data-action="approve-withdrawal" data-id="${doc.id}">Approve</button> <button class="btn btn-danger" data-action="decline-withdrawal" data-id="${doc.id}" data-worker-id="${w.workerId}" data-amount="${w.amount}">Decline</button></td></tr>`; };
+        const renderReportRow = (tbody, doc) => {
+            const r = doc.data();
+            const detailsList = `<ul class="details-list"><li><b>Mixing Proofs:</b> ${r.mixing_screenshots}</li><li><b>Tx Proofs:</b> ${r.withdrawal_records}</li><li><b>TG Msgs:</b> ${r.telegram_sentences}</li><li><b>WA Msgs:</b> ${r.whatsapp_sentences}</li><li><b>New Contacts:</b> ${r.new_people_talked}</li><li><b>New Joins:</b> ${r.new_people_registered}</li><li><b>Total Deposit:</b> ${r.new_people_deposit}</li></ul>`;
+            const actionBtn = r.status === 'approved' ? `<span style="color:var(--success-color);">Approved</span>` : `<button class="btn btn-success" data-action="approve-report" data-id="${doc.id}" data-worker-id="${r.workerId}">Approve</button>`;
+            tbody.innerHTML += `<tr><td>${r.workerName}</td><td>${detailsList}</td><td>${r.status}</td><td>${actionBtn}</td></tr>`;
+        };
+        
+        document.getElementById('reportDateFilter').value = new Date().toISOString().slice(0, 10);
+        const renderFilteredReports = () => setupListener("daily_reports", [where("date", "==", document.getElementById('reportDateFilter').value)], "reportsTableBody", renderReportRow, (a, b) => b.data().submittedAt - a.data().submittedAt);
+        document.getElementById('reportDateFilter').addEventListener('change', renderFilteredReports);
+
+        setupListener("users", [where("role", "==", "worker")], "workerTableBody", renderWorkerRow);
+        setupListener("tasks", [], "tasksTableBody", renderTaskRow, (a, b) => b.data().createdAt - a.data().createdAt);
+        setupListener("task_submissions", [where("status", "==", "pending")], "taskSubmissionsTableBody", renderSubmissionRow, (a, b) => b.data().submittedAt - a.data().submittedAt);
+        setupListener("withdrawals", [where("status", "==", "pending")], "withdrawalTableBody", renderWithdrawalRow, (a, b) => b.data().requestedAt - a.data().requestedAt);
+        renderFilteredReports();
+
+        async function addWorker() {
+            alert("For security, creating users should be done in a backend environment like Cloud Functions, not directly from the admin panel.");
+        }
+        async function addTask() {
+            const title = document.getElementById('taskTitle').value;
+            const credits = Number(document.getElementById('taskCredits').value);
+            const description = document.getElementById('taskDescription').value;
+            if (!title || !credits || !description) {
+                alert("Please fill out all task fields."); return;
+            }
+            try {
+                await addDoc(collection(db, "tasks"), { title, credits, description, createdAt: serverTimestamp() });
+                alert("New task added successfully!");
+                document.getElementById('taskTitle').value = '';
+                document.getElementById('taskCredits').value = '';
+                document.getElementById('taskDescription').value = '';
+            } catch (error) {
+                console.error("Error adding task: ", error);
+                alert("Could not add task. Check console for errors.");
+            }
+        }
+        
+        let currentReportToApprove = {};
+        document.addEventListener('click', async e => {
+            const action = e.target.dataset.action;
+            if (!action) return;
+
+            const id = e.target.dataset.id;
+            const workerId = e.target.dataset.workerId;
+
+            if (action === 'approve-task') {
+                const credits = Number(e.target.dataset.credits);
+                if (!confirm(`Approve this task submission for ${credits} credits?`)) return;
+                const workerRef = doc(db, "users", workerId);
+                const submissionRef = doc(db, "task_submissions", id);
+                const batch = writeBatch(db);
+                batch.update(workerRef, { credits: increment(credits) });
+                batch.delete(submissionRef);
+                await batch.commit();
+                alert("Task approved and credits awarded!");
+            }
+
+            if (action === 'approve-report') {
+                currentReportToApprove = { reportId: id, workerId: workerId };
+                approvalModal.style.display = 'flex';
+            }
+
+            if (action === 'delete-task') {
+                if (!confirm("Are you sure you want to delete this task?")) return;
+                await deleteDoc(doc(db, "tasks", id));
+                alert("Task deleted.");
+            }
+        });
+        
+        confirmApprovalBtn.addEventListener('click', async () => {
+            const creditsInput = document.getElementById('credits-input');
+            const creditsToAward = Number(creditsInput.value);
+            if (creditsToAward <= 0) {
+                alert("Please enter a valid credit amount."); return;
+            }
+            const { reportId, workerId } = currentReportToApprove;
+            const workerRef = doc(db, "users", workerId);
+            const reportRef = doc(db, "daily_reports", reportId);
+            const batch = writeBatch(db);
+            batch.update(workerRef, { credits: increment(creditsToAward) });
+            batch.update(reportRef, { status: 'approved' });
+            await batch.commit();
+            alert("Report approved and credits awarded!");
+            approvalModal.style.display = 'none';
+            creditsInput.value = '';
+        });
+        
+        document.getElementById('addWorkerBtn').addEventListener('click', addWorker);
+        document.getElementById('addTaskBtn').addEventListener('click', addTask);
+    </script>
+</body>
+</html>

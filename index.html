@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - CipherCoin Team</title>
+    <style>
+        :root { --primary-color: #0d6efd; --light-color: #f8f9fa; --dark-gray: #6c757d; --white-color: #fff; }
+        body { font-family: system-ui, -apple-system, sans-serif; display: grid; place-items: center; min-height: 100vh; margin: 0; background-color: var(--light-color); }
+        .login-wrapper { width: 100%; max-width: 400px; padding: 2rem; }
+        .card { background: var(--white-color); padding: 2.5rem; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.1); text-align: center; }
+        h1 { color: #212529; margin-bottom: 0.5rem; font-size: 1.8rem; }
+        p { color: var(--dark-gray); margin-bottom: 2rem; }
+        .form-group { margin-bottom: 1.5rem; text-align: left; }
+        label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
+        input { width: 100%; padding: 0.85rem 1rem; border: 1px solid #ccc; border-radius: 8px; font-size: 1rem; box-sizing: border-box; }
+        button { width: 100%; padding: 0.85rem; background-color: var(--primary-color); color: var(--white-color); border: none; border-radius: 8px; font-size: 1.1rem; cursor: pointer; transition: background-color 0.2s; position: relative; }
+        button:hover { background-color: #0b5ed7; }
+        #error-msg { color: #dc3545; margin-top: 1rem; min-height: 1.2rem; font-weight: 500; }
+        #loader { display: none; border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid var(--white-color); border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; position: absolute; left: 25%; top: 50%; transform: translateY(-50%); }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+    <script src="//cdn.jsdelivr.net/npm/eruda"></script><script>eruda.init();</script>
+</head>
+<body>
+    <div class="login-wrapper">
+        <div class="card">
+            <h1>CipherCoin Team</h1>
+            <p>Login to your dashboard</p>
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" placeholder="you@example.com">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" placeholder="••••••••">
+            </div>
+            <button id="loginBtn"><span id="btn-text">Login</span><div id="loader"></div></button>
+            <div id="error-msg"></div>
+        </div>
+    </div>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+        import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+        const firebaseConfig = { apiKey: "AIzaSyAQk4RNMXrJgQXW0OMWbNINhl1HCdYRqZc", authDomain: "cipher-coin-team.firebaseapp.com", projectId: "cipher-coin-team", storageBucket: "cipher-coin-team.firebasestorage.app", messagingSenderId: "1061225842169", appId: "1:1061225842169:web:e36f7e8e9a07eba6fb2928" };
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const loginBtn = document.getElementById('loginBtn'), btnText = document.getElementById('btn-text'), loader = document.getElementById('loader');
+        async function handleLogin() {
+            const email = document.getElementById('email').value, password = document.getElementById('password').value, errorMsg = document.getElementById('error-msg');
+            errorMsg.textContent = '';
+            if (!email || !password) { errorMsg.textContent = 'Please enter email and password.'; return; }
+            loginBtn.disabled = true; btnText.textContent = 'Logging in...'; loader.style.display = 'block';
+            try {
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                const userDoc = await getDoc(doc(db, "users", userCredential.user.uid));
+                if (userDoc.exists()) {
+                    const userData = userDoc.data();
+                    sessionStorage.setItem('loggedInUser', JSON.stringify({ uid: userCredential.user.uid, ...userData }));
+                    window.location.href = userData.role === 'admin' ? 'admin.html' : 'worker.html';
+                } else {
+                    errorMsg.textContent = 'User role not found in database.'; await auth.signOut();
+                }
+            } catch (error) {
+                errorMsg.textContent = (error.code === 'auth/invalid-credential') ? 'Invalid email or password.' : 'An unknown error occurred.';
+            } finally {
+                loginBtn.disabled = false; btnText.textContent = 'Login'; loader.style.display = 'none';
+            }
+        }
+        loginBtn.addEventListener('click', handleLogin);
+        document.getElementById('password').addEventListener('keyup', (e) => e.key === 'Enter' && handleLogin());
+    </script>
+</body>
+</html>

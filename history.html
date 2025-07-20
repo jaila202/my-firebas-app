@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>History - CipherCoin Team</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+    <style>
+        :root { --primary-color: #0d6efd; --dark-color: #212529; --light-color: #f8f9fa; --white-color: #fff; }
+        body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background-color: var(--light-color); color: #333; }
+        .header { background-color: var(--dark-color); color: var(--white-color); padding: 1rem; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1000; }
+        .header a { color: var(--white-color); text-decoration: none; font-size: 1.2rem; }
+        h1 { margin: 0; font-size: 1.2rem; text-transform: capitalize; }
+        .container { padding: 1rem; }
+        .card { background: var(--white-color); border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 1rem; padding: 1.5rem; }
+        .filters { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem; }
+        .filters > div { display: flex; flex-direction: column; }
+        .filters label { margin-bottom: 0.25rem; font-weight: 500; }
+        .filters input, .filters select, .filters button { font-size: 1rem; padding: 0.75rem; border-radius: 8px; border: 1px solid #ccc; width: 100%; box-sizing: border-box; }
+        .filters button { background-color: var(--primary-color); color: var(--white-color); cursor: pointer; border: none; }
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #ddd; white-space: nowrap; }
+        th { background-color: var(--light-color); }
+        #loader { display: block; border: 5px solid #f3f3f3; border-top: 5px solid var(--primary-color); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 2rem auto; }
+        .empty-state { text-align: center; padding: 2rem; color: #6c757d; font-weight: 500; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @media (min-width: 768px) { .filters { flex-direction: row; align-items: flex-end; } .filters > div { flex: 1; } .filters button { flex: 0; } }
+    </style>
+    <script src="//cdn.jsdelivr.net/npm/eruda"></script><script>eruda.init();</script>
+</head>
+<body>
+    <div class="header">
+        <a href="#" onclick="window.history.back(); return false;"><i class="fas fa-arrow-left"></i></a>
+        <h1 id="page-title">History</h1>
+        <span></span>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <div class="filters">
+                <div id="admin-filter-container" style="display: none;">
+                    <label for="worker-select">Worker:</label>
+                    <select id="worker-select"><option value="all">All Workers</option></select>
+                </div>
+                <div><label for="start-date">From:</label><input type="date" id="start-date"></div>
+                <div><label for="end-date">To:</label><input type="date" id="end-date"></div>
+                <button id="filter-btn">Filter</button>
+            </div>
+            <div id="loader"></div>
+            <div class="table-container">
+                <table id="history-table">
+                    <thead id="history-table-head"></thead>
+                    <tbody id="history-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, where, Timestamp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+
+        const firebaseConfig = { apiKey: "AIzaSyAQk4RNMXrJgQXW0OMWbNINhl1HCdYRqZc", authDomain: "cipher-coin-team.firebaseapp.com", projectId: "cipher-coin-team", storageBucket: "cipher-coin-team.firebasestorage.app", messagingSenderId: "1061225842169", appId: "1:1061225842169:web:e36f7e8e9a07eba6fb2928" };
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        let loggedInUser = null;
+
+        const loader = document.getElementById('loader'), tableHead = document.getElementById('history-table-head'), tableBody = document.getElementById('history-table-body');
+        const urlParams = new URLSearchParams(window.location.search), historyType = urlParams.get('type');
+        document.getElementById('page-title').textContent = `${historyType} History`;
+
+        const collections = {
+            attendance: { name: 'attendance', dateField: 'timestamp' }, reports: { name: 'daily_reports', dateField: 'submittedAt' },
+            withdrawals: { name: 'withdrawals', dateField: 'requestedAt' }
+        };
+        const currentCollectionInfo = collections[historyType];
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                loggedInUser = JSON.parse(sessionStorage.getItem('loggedInUser'));
+                if (loggedInUser && loggedInUser.uid === user.uid) {
+                    initializeHistoryPage();
+                } else {
+                    window.location.href = 'index.html';
+                }
+            } else {
+                window.location.href = 'index.html';
+            }
+        });
+
+        async function populateWorkersDropdown() {
+            if (loggedInUser.role === 'admin') {
+                document.getElementById('admin-filter-container').style.display = 'block';
+                const usersSnapshot = await getDocs(query(collection(db, "users"), where("role", "==", "worker")));
+                usersSnapshot.forEach(doc => {
+                    const option = document.createElement('option');
+                    option.value = doc.id; option.textContent = doc.data().name;
+                    document.getElementById('worker-select').appendChild(option);
+                });
+            }
+        }
+
+        async function fetchHistory() {
+            if (!currentCollectionInfo) { tableBody.innerHTML = `<tr><td colspan="5" class="empty-state">Invalid history type.</td></tr>`; return; }
+            loader.style.display = 'block'; tableBody.innerHTML = ''; tableHead.innerHTML = '';
+            
+            const startDate = new Date(document.getElementById('start-date').value);
+            const endDate = new Date(document.getElementById('end-date').value);
+            endDate.setHours(23, 59, 59, 999);
+            const selectedWorkerId = document.getElementById('worker-select').value;
+            
+            let baseQuery = collection(db, currentCollectionInfo.name);
+            if (loggedInUser.role !== 'admin') {
+                baseQuery = query(baseQuery, where("workerId", "==", loggedInUser.uid));
+            } else if (selectedWorkerId !== 'all') {
+                baseQuery = query(baseQuery, where("workerId", "==", selectedWorkerId));
+            }
+            
+            try {
+                // ✅ STEP 1: Fetch all worker data and map IDs to names for efficient lookup.
+                const workerNameMap = new Map();
+                if (loggedInUser.role === 'admin') {
+                    const usersSnapshot = await getDocs(query(collection(db, "users"), where("role", "==", "worker")));
+                    usersSnapshot.forEach(doc => workerNameMap.set(doc.id, doc.data().name));
+                }
+
+                const snapshot = await getDocs(baseQuery);
+                const filteredDocs = snapshot.docs
+                    .filter(doc => {
+                        const data = doc.data();
+                        const docDate = data[currentCollectionInfo.dateField]?.toDate();
+                        if (!docDate) return false;
+                        return docDate >= startDate && docDate <= endDate;
+                    })
+                    .sort((a, b) => b.data()[currentCollectionInfo.dateField] - a.data()[currentCollectionInfo.dateField]);
+
+                if (filteredDocs.length === 0) {
+                    const colCount = historyType === 'reports' ? 5 : (historyType === 'withdrawals' ? 4 : 3);
+                    tableBody.innerHTML = `<tr><td colspan="${colCount}" class="empty-state">No records found.</td></tr>`;
+                } else {
+                    let headers = [];
+                    let rows = '';
+                    filteredDocs.forEach(doc => {
+                        const data = doc.data();
+                        // ✅ STEP 2: Reliably get the worker's name.
+                        // Use the map for admins, or the logged-in user's name for workers.
+                        // Fallback to the original data.workerName or 'Unknown' if not found.
+                        const workerName = loggedInUser.role === 'admin' 
+                            ? (workerNameMap.get(data.workerId) || 'Unknown Worker')
+                            : (loggedInUser.name);
+                        
+                        if (headers.length === 0) {
+                            switch(historyType) {
+                                case 'attendance': headers = ['Worker', 'Date & Time', 'Session']; break;
+                                case 'reports': headers = ['Worker', 'Date', 'New Joins', 'Deposit', 'Status']; break;
+                                case 'withdrawals': headers = ['Worker', 'Amount', 'Status', 'Date']; break;
+                            }
+                            tableHead.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
+                        }
+                        
+                        // ✅ STEP 3: Use the reliable `workerName` variable for display.
+                        let rowHtml = '';
+                        switch(historyType) {
+                            case 'attendance': rowHtml = `<td>${workerName}</td><td>${data.timestamp.toDate().toLocaleString()}</td><td>${data.session}</td>`; break;
+                            case 'reports': rowHtml = `<td>${workerName}</td><td>${data.date}</td><td>${data.new_people_registered}</td><td>${data.new_people_deposit}</td><td>${data.status}</td>`; break;
+                            case 'withdrawals': rowHtml = `<td>${workerName}</td><td>${data.amount}</td><td>${data.status}</td><td>${data.requestedAt.toDate().toLocaleDateString()}</td>`; break;
+                        }
+                        rows += `<tr>${rowHtml}</tr>`;
+                    });
+                    tableBody.innerHTML = rows;
+                }
+            } catch (error) {
+                console.error("Error fetching history:", error);
+                tableBody.innerHTML = `<tr><td colspan="5" class="empty-state">An error occurred while fetching data.</td></tr>`;
+            } finally {
+                loader.style.display = 'none';
+            }
+        }
+        
+        async function initializeHistoryPage() {
+            const today = new Date(), firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+            document.getElementById('start-date').value = firstDay.toISOString().slice(0,10);
+            document.getElementById('end-date').value = today.toISOString().slice(0,10);
+            
+            document.getElementById('filter-btn').addEventListener('click', fetchHistory);
+            
+            await populateWorkersDropdown();
+            fetchHistory();
+        }
+    </script>
+</body>
+</html>
