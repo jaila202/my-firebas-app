@@ -20,7 +20,8 @@
         .filters button { background-color: var(--primary-color); color: var(--white-color); cursor: pointer; border: none; }
         .table-container { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #ddd; white-space: nowrap; }
+        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #ddd; vertical-align: top; white-space: nowrap; }
+        td ul { white-space: normal; }
         th { background-color: var(--light-color); }
         #loader { display: block; border: 5px solid #f3f3f3; border-top: 5px solid var(--primary-color); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 2rem auto; }
         .empty-state { text-align: center; padding: 2rem; color: #6c757d; font-weight: 500; }
@@ -74,7 +75,8 @@
         document.getElementById('page-title').textContent = `${historyType} History`;
 
         const collections = {
-            attendance: { name: 'attendance', dateField: 'timestamp' }, reports: { name: 'daily_reports', dateField: 'submittedAt' },
+            attendance: { name: 'attendance', dateField: 'timestamp' }, 
+            reports: { name: 'daily_reports', dateField: 'submittedAt' },
             withdrawals: { name: 'withdrawals', dateField: 'requestedAt' }
         };
         const currentCollectionInfo = collections[historyType];
@@ -113,61 +115,81 @@
             endDate.setHours(23, 59, 59, 999);
             const selectedWorkerId = document.getElementById('worker-select').value;
             
-            let baseQuery = collection(db, currentCollectionInfo.name);
+            let queryConstraints = [];
             if (loggedInUser.role !== 'admin') {
-                baseQuery = query(baseQuery, where("workerId", "==", loggedInUser.uid));
+                queryConstraints.push(where("workerId", "==", loggedInUser.uid));
             } else if (selectedWorkerId !== 'all') {
-                baseQuery = query(baseQuery, where("workerId", "==", selectedWorkerId));
+                queryConstraints.push(where("workerId", "==", selectedWorkerId));
             }
             
             try {
-                // ✅ STEP 1: Fetch all worker data and map IDs to names for efficient lookup.
                 const workerNameMap = new Map();
                 if (loggedInUser.role === 'admin') {
                     const usersSnapshot = await getDocs(query(collection(db, "users"), where("role", "==", "worker")));
                     usersSnapshot.forEach(doc => workerNameMap.set(doc.id, doc.data().name));
                 }
 
-                const snapshot = await getDocs(baseQuery);
+                const finalQuery = query(collection(db, currentCollectionInfo.name), ...queryConstraints);
+                const snapshot = await getDocs(finalQuery);
+
                 const filteredDocs = snapshot.docs
                     .filter(doc => {
                         const data = doc.data();
                         const docDate = data[currentCollectionInfo.dateField]?.toDate();
                         if (!docDate) return false;
-                        return docDate >= startDate && docDate <= endDate;
+                        const startDateValue = document.getElementById('start-date').valueAsNumber;
+                        const endDateValue = document.getElementById('end-date').valueAsNumber;
+                        // Only filter if dates are valid
+                        if(startDateValue && endDateValue) {
+                            return docDate >= new Date(startDateValue) && docDate <= new Date(endDateValue + 24*60*60*1000 - 1);
+                        }
+                        return true;
                     })
                     .sort((a, b) => b.data()[currentCollectionInfo.dateField] - a.data()[currentCollectionInfo.dateField]);
 
+                let headers = [];
+                switch(historyType) {
+                    case 'attendance': headers = ['Date & Time', 'Session']; break;
+                    case 'reports': headers = ['Date', 'Details', 'Status', 'Credits Awarded']; break;
+                    case 'withdrawals': headers = ['Amount', 'Status', 'Date']; break;
+                }
+                if(loggedInUser.role === 'admin') headers.unshift('Worker');
+                tableHead.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
+
                 if (filteredDocs.length === 0) {
-                    const colCount = historyType === 'reports' ? 5 : (historyType === 'withdrawals' ? 4 : 3);
-                    tableBody.innerHTML = `<tr><td colspan="${colCount}" class="empty-state">No records found.</td></tr>`;
+                    tableBody.innerHTML = `<tr><td colspan="${headers.length}" class="empty-state">No records found for the selected criteria.</td></tr>`;
                 } else {
-                    let headers = [];
                     let rows = '';
                     filteredDocs.forEach(doc => {
                         const data = doc.data();
-                        // ✅ STEP 2: Reliably get the worker's name.
-                        // Use the map for admins, or the logged-in user's name for workers.
-                        // Fallback to the original data.workerName or 'Unknown' if not found.
+                        // ✅ FIX: Reliably get worker name, with fallback
                         const workerName = loggedInUser.role === 'admin' 
-                            ? (workerNameMap.get(data.workerId) || 'Unknown Worker')
+                            ? (workerNameMap.get(data.workerId) || data.workerName || 'Unknown')
                             : (loggedInUser.name);
                         
-                        if (headers.length === 0) {
-                            switch(historyType) {
-                                case 'attendance': headers = ['Worker', 'Date & Time', 'Session']; break;
-                                case 'reports': headers = ['Worker', 'Date', 'New Joins', 'Deposit', 'Status']; break;
-                                case 'withdrawals': headers = ['Worker', 'Amount', 'Status', 'Date']; break;
-                            }
-                            tableHead.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
-                        }
-                        
-                        // ✅ STEP 3: Use the reliable `workerName` variable for display.
                         let rowHtml = '';
+                        if(loggedInUser.role === 'admin') rowHtml += `<td>${workerName}</td>`;
+                        
                         switch(historyType) {
-                            case 'attendance': rowHtml = `<td>${workerName}</td><td>${data.timestamp.toDate().toLocaleString()}</td><td>${data.session}</td>`; break;
-                            case 'reports': rowHtml = `<td>${workerName}</td><td>${data.date}</td><td>${data.new_people_registered}</td><td>${data.new_people_deposit}</td><td>${data.status}</td>`; break;
-                            case 'withdrawals': rowHtml = `<td>${workerName}</td><td>${data.amount}</td><td>${data.status}</td><td>${data.requestedAt.toDate().toLocaleDateString()}</td>`; break;
+                            case 'attendance': 
+                                rowHtml += `<td>${data.timestamp.toDate().toLocaleString()}</td><td>${data.session}</td>`; 
+                                break;
+                            case 'reports':
+                                // ✅ FIX: Show all 7 report details in a list
+                                const detailsList = `<ul style="margin:0; padding-left: 1rem; font-size: 0.9em;">
+                                    <li><b>Mixing Proofs:</b> ${data.mixing_screenshots}</li>
+                                    <li><b>Tx Proofs:</b> ${data.withdrawal_records}</li>
+                                    <li><b>TG Msgs:</b> ${data.telegram_sentences}</li>
+                                    <li><b>WA Msgs:</b> ${data.whatsapp_sentences}</li>
+                                    <li><b>New Contacts:</b> ${data.new_people_talked}</li>
+                                    <li><b>New Joins:</b> ${data.new_people_registered}</li>
+                                    <li><b>Total Deposit:</b> ${data.new_people_deposit}</li>
+                                </ul>`;
+                                rowHtml += `<td>${data.date}</td><td>${detailsList}</td><td>${data.status}</td><td>${data.awardedCredits || 'N/A'}</td>`; 
+                                break;
+                            case 'withdrawals': 
+                                rowHtml += `<td>${data.amount}</td><td>${data.status}</td><td>${data.requestedAt.toDate().toLocaleDateString()}</td>`; 
+                                break;
                         }
                         rows += `<tr>${rowHtml}</tr>`;
                     });
