@@ -72,7 +72,6 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
 
     <div class="card">
         <h2><i class="fas fa-bullhorn"></i> New Tasks</h2>
-        <div id="taskMessages"></div>
         <div id="newTasksContainer">
             <p id="loader-tasks" class="empty-state">Loading tasks...</p>
         </div>
@@ -158,12 +157,46 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
             if (!doc.exists()) return;
             userCreditBalance = doc.data().credits || 0;
             document.getElementById('credit-balance').textContent = userCreditBalance;
-            document.getElementById('request-withdrawal-btn').disabled = userCreditBalance < 500;
+            const withdrawBtn = document.getElementById('request-withdrawal-btn');
+            const withdrawAmountInput = document.getElementById('withdraw-amount');
+            withdrawBtn.disabled = userCreditBalance < 500 || Number(withdrawAmountInput.value) <= 0;
         });
     }
 
     async function requestWithdrawal() {
-        // ... (This function remains the same as before)
+        const amountInput = document.getElementById('withdraw-amount');
+        const amount = Number(amountInput.value);
+        if (amount <= 0 || amount > userCreditBalance || amount < 500) {
+            alert("Invalid withdrawal amount. Must be at least 500 and not more than your balance.");
+            return;
+        }
+
+        const btn = document.getElementById('request-withdrawal-btn');
+        btn.disabled = true;
+        btn.textContent = 'Processing...';
+
+        try {
+            const batch = writeBatch(db);
+            const userRef = doc(db, "users", loggedInUser.uid);
+            const withdrawalRef = doc(collection(db, "withdrawals"));
+            
+            batch.update(userRef, { credits: increment(-amount) });
+            batch.set(withdrawalRef, {
+                workerId: loggedInUser.uid,
+                workerName: loggedInUser.name,
+                amount: amount,
+                status: 'pending',
+                requestedAt: serverTimestamp()
+            });
+            await batch.commit();
+            showSuccessMessage('withdrawalSuccessMsg', `Withdrawal request of ${amount} credits submitted.`);
+            amountInput.value = '';
+        } catch (error) {
+            alert("Could not process withdrawal. Please try again.");
+            console.error("Withdrawal error:", error);
+        } finally {
+            btn.textContent = 'Request';
+        }
     }
 
     // --- ATTENDANCE ---
@@ -171,7 +204,6 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         const { date, hour } = getISTDateTime();
         document.getElementById('attendance-date').textContent = date.toLocaleDateString('en-GB');
 
-        // Helper to check and update a single session
         async function checkSession(sessionName, relevantDate) {
             const btn = document.getElementById(`${sessionName}Btn`);
             const statusSpan = document.getElementById(`${sessionName}Status`);
@@ -182,12 +214,11 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
                 btn.textContent = "Marked";
                 statusSpan.textContent = "You're Present";
                 statusSpan.className = "status present";
-                return true; // Marked
+                return true;
             }
-            return false; // Not marked
+            return false;
         }
 
-        // --- Morning Session Logic ---
         const todayString = date.toISOString().slice(0, 10);
         const morningMarked = await checkSession('morning', todayString);
         if (!morningMarked) {
@@ -204,9 +235,8 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
             }
         }
 
-        // --- Evening Session Logic ---
         let eveningRelevantDate = todayString;
-        if (hour < 15) { // If it's before 3 PM, the relevant session started yesterday
+        if (hour < 15) { 
             let yesterday = new Date(date);
             yesterday.setDate(yesterday.getDate() - 1);
             eveningRelevantDate = yesterday.toISOString().slice(0, 10);
@@ -222,8 +252,9 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
                 eveningStatus.textContent = "";
             } else {
                 eveningBtn.disabled = true;
-                eveningStatus.textContent = "Time Over";
-                eveningStatus.className = "status absent";
+                // ✅ FIX: Correctly show 'Time Over' or 'Not Yet Started'
+                eveningStatus.textContent = (hour >= 1 && hour < 15) ? "Time Over" : "Not Yet Started";
+                eveningStatus.className = (hour >= 1 && hour < 15) ? "status absent" : "status pending";
             }
         }
     }
@@ -234,7 +265,6 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         const { date, hour } = getISTDateTime();
         let relevantDate = date.toISOString().slice(0, 10);
 
-        // FIX: Ensure evening attendance after midnight is assigned to the previous day
         if (session === 'evening' && hour < 1) {
             let yesterday = new Date(date);
             yesterday.setDate(yesterday.getDate() - 1);
@@ -258,17 +288,16 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         document.getElementById('loader-tasks').style.display = 'block';
         const { dateString } = getISTDateTime();
         
-        // FIX: This query requires the composite index on (status, createdAt)
         const tasksQuery = query(collection(db, "tasks"), where("status", "==", "active"), orderBy("createdAt", "desc"));
         const submissionsQuery = query(collection(db, "task_submissions"), where("workerId", "==", loggedInUser.uid), where("date", "==", dateString));
 
         try {
-            const [tasksSnapshot, submissionsSnapshot] = await Promise.all([ getDocs(tasksQuery), getDocs(submissionsSnapshot) ]);
+            // ✅ FIX: Corrected the typo from submissionsSnapshot to submissionsQuery
+            const [tasksSnapshot, submissionsSnapshot] = await Promise.all([ getDocs(tasksQuery), getDocs(submissionsQuery) ]);
             const submittedTaskIds = new Set(submissionsSnapshot.docs.map(doc => doc.data().taskId));
             const container = document.getElementById('newTasksContainer');
             container.innerHTML = '';
-            document.getElementById('loader-tasks').style.display = 'none';
-
+            
             if (tasksSnapshot.empty) {
                 container.innerHTML = '<p class="empty-state">No new tasks available.</p>';
                 return;
@@ -288,7 +317,8 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
             });
         } catch (error) {
             console.error("Failed to render tasks:", error);
-            document.getElementById('newTasksContainer').innerHTML = '<p class="empty-state" style="color: var(--danger-color);">Could not load tasks. Please ensure you have the required database index.</p>';
+            document.getElementById('newTasksContainer').innerHTML = '<p class="empty-state" style="color: var(--danger-color);">Could not load tasks. Please try again later.</p>';
+        } finally {
             document.getElementById('loader-tasks').style.display = 'none';
         }
     }
@@ -299,7 +329,6 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         const docSnap = await getDoc(doc(db, "daily_reports", `${loggedInUser.uid}_${dateString}`));
         if (docSnap.exists()) {
             document.getElementById('dailyReportForm').style.display = 'none';
-            // FIX: The duration parameter is set to 0 to make the message persistent
             showSuccessMessage('reportSuccessMsg', 'Your report for today has already been submitted.', 0);
         }
     }
@@ -312,7 +341,6 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
             const reportData = { workerId: loggedInUser.uid, workerName: loggedInUser.name, date: dateString, status: 'pending', submittedAt: serverTimestamp(), mixing_screenshots: Number(document.getElementById('mixing_screenshots').value), withdrawal_records: Number(document.getElementById('withdrawal_records').value), telegram_sentences: Number(document.getElementById('telegram_sentences').value), whatsapp_sentences: Number(document.getElementById('whatsapp_sentences').value), new_people_talked: Number(document.getElementById('new_people_talked').value), new_people_registered: Number(document.getElementById('new_people_registered').value), new_people_deposit: Number(document.getElementById('new_people_deposit').value) };
             await setDoc(doc(db, "daily_reports", `${loggedInUser.uid}_${dateString}`), reportData);
             document.getElementById('dailyReportForm').style.display = 'none';
-            // FIX: The duration parameter is set to 0 to make the message persistent
             showSuccessMessage('reportSuccessMsg', "Daily report submitted successfully!", 0);
         } catch (error) {
             alert(`Could not submit report. Error: ${error.message}`);
@@ -320,16 +348,42 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         }
     }
 
-    // --- INITIALIZATION ---
+      // --- INITIALIZATION ---
     function initializeDashboard() {
         document.getElementById('welcomeMsg').textContent = `Welcome, ${loggedInUser.name}!`;
         document.getElementById('morningBtn').addEventListener('click', () => markAttendance('morning'));
         document.getElementById('eveningBtn').addEventListener('click', () => markAttendance('evening'));
         document.getElementById('dailyReportForm').addEventListener('submit', handleReportSubmit);
         document.getElementById('request-withdrawal-btn').addEventListener('click', requestWithdrawal);
+        document.getElementById('withdraw-amount').addEventListener('input', (e) => {
+            const amount = Number(e.target.value);
+            document.getElementById('request-withdrawal-btn').disabled = userCreditBalance < 500 || amount <= 0 || amount > userCreditBalance;
+        });
         
         document.addEventListener('click', async e => {
-            // ... (Task submission logic remains the same)
+            if (e.target.dataset.action === 'submit-task') {
+                const btn = e.target;
+                const { id, title, credits } = btn.dataset;
+                btn.disabled = true;
+                
+                try {
+                    const { dateString } = getISTDateTime();
+                    await addDoc(collection(db, "task_submissions"), {
+                        workerId: loggedInUser.uid,
+                        workerName: loggedInUser.name,
+                        taskId: id,
+                        taskTitle: title,
+                        credits: Number(credits),
+                        date: dateString,
+                        status: 'pending',
+                        submittedAt: serverTimestamp()
+                    });
+                    btn.innerHTML = '<i class="fas fa-check"></i> Submitted Today';
+                } catch (error) {
+                    alert('Could not submit task. Please try again.');
+                    btn.disabled = false;
+                }
+            }
         });
         
         setupWallet();
