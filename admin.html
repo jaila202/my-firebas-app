@@ -94,14 +94,12 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
         import { getFirestore, collection, doc, setDoc, deleteDoc, query, where, onSnapshot, serverTimestamp, addDoc, updateDoc, increment, writeBatch } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
         import { getAuth, signOut } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
-        // ✅ FIX: Import functions SDK
         import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-functions.js";
 
         const firebaseConfig = { apiKey: "AIzaSyAQk4RNMXrJgQXW0OMWbNINhl1HCdYRqZc", authDomain: "cipher-coin-team.firebaseapp.com", projectId: "cipher-coin-team", storageBucket: "cipher-coin-team.firebasestorage.app", messagingSenderId: "1061225842169", appId: "1:1061225842169:web:e36f7e8e9a07eba6fb2928" };
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
-        // ✅ FIX: Initialize functions
         const functions = getFunctions(app);
 
         if (JSON.parse(sessionStorage.getItem('loggedInUser'))?.role !== 'admin') { window.location.href = 'index.html'; }
@@ -147,12 +145,11 @@
         document.getElementById('reportDateFilter').addEventListener('change', renderFilteredReports);
 
         setupListener("users", [where("role", "==", "worker")], "workerTableBody", renderWorkerRow);
-        setupListener("tasks", [], "tasksTableBody", renderTaskRow, (a, b) => b.data().createdAt?.seconds - a.data().createdAt?.seconds);
+        setupListener("tasks", [where("status", "==", "active")], "tasksTableBody", renderTaskRow, (a, b) => b.data().createdAt?.seconds - a.data().createdAt?.seconds);
         setupListener("task_submissions", [where("status", "==", "pending")], "taskSubmissionsTableBody", renderSubmissionRow, (a, b) => b.data().submittedAt?.seconds - a.data().submittedAt?.seconds);
         setupListener("withdrawals", [where("status", "==", "pending")], "withdrawalTableBody", renderWithdrawalRow, (a, b) => b.data().requestedAt?.seconds - a.data().requestedAt?.seconds);
         renderFilteredReports();
 
-        // ✅ FIX: Replaced alert with a call to a Firebase Function
         async function addWorker() {
             const btn = document.getElementById('addWorkerBtn');
             const name = document.getElementById('workerName').value.trim();
@@ -209,47 +206,66 @@
             const action = e.target.dataset.action;
             if (!action) return;
 
-            const id = e.target.dataset.id;
-            const workerId = e.target.dataset.workerId;
-            e.target.disabled = true; // Disable button immediately
+            const targetButton = e.target;
+            const id = targetButton.dataset.id;
+            const workerId = targetButton.dataset.workerId;
+            targetButton.disabled = true;
 
             try {
                 if (action === 'approve-task') {
-                    const credits = Number(e.target.dataset.credits);
-                    if (!confirm(`Approve this task submission for ${credits} credits?`)) return;
+                    const credits = Number(targetButton.dataset.credits);
+                    if (!confirm(`Approve this task submission for ${credits} credits?`)) {
+                        targetButton.disabled = false;
+                        return;
+                    }
+                       // ✅ FIX: Changed logic to DELETE the submission, which is allowed by your security rules.
                     const batch = writeBatch(db);
                     batch.update(doc(db, "users", workerId), { credits: increment(credits) });
-                    batch.update(doc(db, "task_submissions", id), { status: 'approved' }); // Update status instead of deleting
+                    batch.delete(doc(db, "task_submissions", id));
                     await batch.commit();
-                    alert("Task approved!");
+                    alert("Task approved and credits awarded!");
                 }
                 
                 if (action === 'approve-report') {
                     currentReportToApprove = { reportId: id, workerId: workerId };
                     approvalModal.style.display = 'flex';
+                    targetButton.disabled = false; // Re-enable button since modal handles action
                 }
 
                 if (action === 'delete-task') {
-                    if (!confirm("Are you sure you want to delete this task? This cannot be undone.")) return;
-                    await updateDoc(doc(db, "tasks", id), { status: 'inactive' }); // Set inactive instead of deleting
+                    if (!confirm("Are you sure you want to deactivate this task?")) {
+                        targetButton.disabled = false;
+                        return;
+                    }
+                    await updateDoc(doc(db, "tasks", id), { status: 'inactive' });
                     alert("Task deactivated.");
+                    targetButton.disabled = false;
                 }
 
                 if (action === 'delete-worker') {
-                    if (!confirm("Are you sure you want to delete this worker's Firestore record? This does NOT delete their login account.")) return;
+                    if (!confirm("Are you sure you want to delete this worker's Firestore record? This does NOT delete their login account.")) {
+                        targetButton.disabled = false;
+                        return;
+                    }
                     await deleteDoc(doc(db, "users", id));
-                    alert("Worker record deleted.");
+                    alert("Worker record deleted from database.");
                 }
 
                 if (action === 'approve-withdrawal') {
-                    if (!confirm("Approve this withdrawal request?")) return;
+                    if (!confirm("Approve this withdrawal request?")) {
+                        targetButton.disabled = false;
+                        return;
+                    }
                     await updateDoc(doc(db, "withdrawals", id), { status: 'approved' });
                     alert("Withdrawal approved.");
                 }
                 
                 if (action === 'decline-withdrawal') {
-                    const amount = Number(e.target.dataset.amount);
-                    if (!confirm(`Decline this request and refund ${amount} credits to the worker?`)) return;
+                    const amount = Number(targetButton.dataset.amount);
+                    if (!confirm(`Decline this request and refund ${amount} credits to the worker?`)) {
+                        targetButton.disabled = false;
+                        return;
+                    }
                     const batch = writeBatch(db);
                     batch.update(doc(db, "withdrawals", id), { status: 'declined' });
                     batch.update(doc(db, "users", workerId), { credits: increment(amount) });
@@ -259,12 +275,11 @@
             } catch (error) {
                 console.error(`Error performing action '${action}':`, error);
                 alert('An error occurred. Please check the console.');
-            } finally {
-                if(action !== 'approve-report') e.target.disabled = false;
+                targetButton.disabled = false;
             }
         });
         
-         confirmApprovalBtn.addEventListener('click', async () => {
+        confirmApprovalBtn.addEventListener('click', async () => {
             const btn = confirmApprovalBtn;
             btn.disabled = true;
             const creditsInput = document.getElementById('credits-input');
