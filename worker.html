@@ -66,8 +66,8 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
             <span>Today's Attendance</span>
             <span id="attendance-date" style="font-size: 0.9rem; font-weight: normal; margin-left: auto;"></span>
         </h2>
-        <p>Morning (6 AM - 11 AM): <button id="morningBtn" class="btn btn-primary" disabled>Mark</button><span id="morningStatus" class="status"></span></p>
-        <p>Evening (3 PM - 1 AM): <button id="eveningBtn" class="btn btn-primary" disabled>Mark</button><span id="eveningStatus" class="status"></span></p>
+        <p>(6 AM - 11 AM): <button id="morningBtn" class="btn btn-primary" disabled>Mark</button><span id="morningStatus" class="status"></span></p>
+        <p>(3 PM - 1 AM): <button id="eveningBtn" class="btn btn-primary" disabled>Mark</button><span id="eveningStatus" class="status"></span></p>
     </div>
 
     <div class="card">
@@ -193,7 +193,6 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         }
     }
 
-    // ✅ FIX: This function is now robust and will work correctly with the new security rules.
     async function updateAttendanceUI() {
         const { date, dateString, hour } = getISTDateTime();
         document.getElementById('attendance-date').textContent = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
@@ -205,11 +204,10 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
                 return docSnap.exists();
             } catch (error) {
                 console.error(`Permission error checking attendance for ${session}, or other error:`, error);
-                return false; // Assume not marked if we can't check
+                return false;
             }
         }
 
-        // --- Morning Session (6 AM - 11 AM) ---
         const morningBtn = document.getElementById('morningBtn');
         const morningStatus = document.getElementById('morningStatus');
         const morningMarked = await isSessionMarked('morning', dateString);
@@ -231,7 +229,6 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
             }
         }
 
-        // --- Evening Session (3 PM - 1 AM) ---
         const eveningBtn = document.getElementById('eveningBtn');
         const eveningStatus = document.getElementById('eveningStatus');
         let relevantEveningDate = dateString;
@@ -281,7 +278,6 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         }
     }
     
-    // ✅ FIX: This function now correctly shows "No new tasks" after all are submitted.
     async function renderNewTasks() {
         if (!loggedInUser) return;
         const loader = document.getElementById('loader-tasks');
@@ -293,15 +289,15 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         const tasksQuery = query(collection(db, "tasks"), where("status", "==", "active"), orderBy("createdAt", "desc"));
         const submissionsQuery = query(collection(db, "task_submissions"), where("workerId", "==", loggedInUser.uid), where("date", "==", dateString));
         try {
-            const [tasksSnapshot, submissionsSnapshot] = await Promise.all([ getDocs(tasksQuery), getDocs(submissionsQuery) ]);
+            const [tasksSnapshot, submissionsSnapshot] = await Promise.all([ getDocs(tasksQuery), getDocs(submissionsSnapshot) ]);
             const submittedTaskIds = new Set(submissionsSnapshot.docs.map(doc => doc.data().taskId));
             
-            let unsubmittedTasksExist = false;
+            let hasUnsubmittedTasks = false;
             tasksSnapshot.forEach(d => {
                 const task = d.data();
                 const isSubmitted = submittedTaskIds.has(d.id);
                 if (!isSubmitted) {
-                    unsubmittedTasksExist = true;
+                    hasUnsubmittedTasks = true;
                 }
                 container.innerHTML += `
                     <div style="border-bottom: 1px solid #eee; padding-bottom: 1rem; margin-bottom: 1rem;">
@@ -312,9 +308,11 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
                         </button>
                     </div>`;
             });
-            if (!unsubmittedTasksExist) {
+
+            if (!hasUnsubmittedTasks) {
                  container.innerHTML = '<p class="empty-state">No new tasks available.</p>';
             }
+
         } catch (error) {
             console.error("Failed to render tasks:", error);
             container.innerHTML = `<p class="empty-state" style="color: var(--danger-color);">Could not load tasks. Please ensure the database index is created.</p>`;
@@ -323,6 +321,16 @@ input[type="number"], input[type="text"] { font-size: 1rem; padding: 0.75rem; bo
         }
     }
     
+    async function setupDailyReport() {
+        if (!loggedInUser) return;
+        const { dateString } = getISTDateTime();
+        const docSnap = await getDoc(doc(db, "daily_reports", `${loggedInUser.uid}_${dateString}`));
+        if (docSnap.exists()) {
+            document.getElementById('dailyReportForm').style.display = 'none';
+            showSuccessMessage('reportSuccessMsg', 'Your report for today has already been submitted.', 0);
+        }
+    }
+
     async function handleReportSubmit(e) {
         e.preventDefault();
         const btn = e.target.querySelector('button'); btn.disabled = true;
